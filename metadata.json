@@ -1,0 +1,6 @@
+{
+  "name": "AI Car Damage Estimator",
+  "description": "Analyze car damage from images to identify parts, severity, repair actions, and cost estimates in Indian Rupees (INR).",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
