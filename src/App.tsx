@@ -7,6 +7,7 @@ import { UserProtectedRoute, OwnerProtectedRoute } from "./components/ProtectedR
 import { SAMPLE_CARS } from "./data";
 import { DamageAssessment, SampleCar, SavedAppraisal } from "./types";
 import { overrideAssessmentWithPricing } from "./utils/pricingEngine";
+import { fetchAdminPrices, saveAdminPrices } from "./utils/pricingApi";
 import { 
   Upload, 
   Image as ImageIcon, 
@@ -320,10 +321,11 @@ export default function App() {
   
   const [shopOwnerPricing, setShopOwnerPricing] = useState<Record<string, Record<string, { repair: number; replace: number }>>>(() => {
     try {
-      const savedUser = localStorage.getItem("autoguard_auth_user") || sessionStorage.getItem("autoguard_auth_user");
-      if (savedUser) {
-        const user = JSON.parse(savedUser);
-        const key = user ? `pricing_list_${user.email.split('@')[0]}` : "pricing_list_default";
+      const savedAdmin = localStorage.getItem("autoguard_admin_user") || localStorage.getItem("autoguard_auth_user") || sessionStorage.getItem("autoguard_admin_user") || sessionStorage.getItem("autoguard_auth_user");
+      if (savedAdmin) {
+        const user = JSON.parse(savedAdmin);
+        const email = user.email || user.id;
+        const key = email ? `pricing_list_${email.split('@')[0]}` : "pricing_list_default";
         const saved = localStorage.getItem(key);
         if (saved) {
           return JSON.parse(saved);
@@ -396,10 +398,13 @@ export default function App() {
   const [customerAddress, setCustomerAddress] = useState("");
 
   const loadedEmailRef = useRef<string | undefined>(undefined);
+  const isInitialPriceFetchCompleteRef = useRef<boolean>(false);
 
-  // Synchronize/load pricing and clear session UI states dynamically on login/logout/switch
+  // Synchronize/load pricing and clear session UI states dynamically on login/logout/switch/reload
   React.useEffect(() => {
-    // 1. Instantly clear the old session's UI state
+    const activeEmail = adminUser?.email || authUser?.email;
+
+    // Reset UI state for session changes
     setCurrentAssessment(null);
     setSelectedSample(null);
     setCustomImage(null);
@@ -412,34 +417,57 @@ export default function App() {
     setCustomerAddress("");
     setActiveAppraisalId(null);
 
-    // 2. Fetch/Load only the specific component rates assigned to that specific authenticated email profile
-    const key = authUser ? `pricing_list_${authUser.email.split('@')[0]}` : "pricing_list_default";
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        setShopOwnerPricing(JSON.parse(saved));
-      } else {
-        // If brand-new user logs in for the first time, initialize with baseline
-        setShopOwnerPricing(JSON.parse(JSON.stringify(DEFAULT_BASELINE_PRICING)));
+    // Fetch the isolated custom price list for this authenticated admin via backend API with JWT
+    const loadPricesForActiveAdmin = async () => {
+      try {
+        const response = await fetchAdminPrices();
+        if (response && response.success && response.prices) {
+          setShopOwnerPricing(response.prices);
+          const key = activeEmail ? `pricing_list_${activeEmail.split('@')[0]}` : "pricing_list_default";
+          localStorage.setItem(key, JSON.stringify(response.prices));
+          isInitialPriceFetchCompleteRef.current = true;
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote admin pricing, loading local cache:", err);
+        const key = activeEmail ? `pricing_list_${activeEmail.split('@')[0]}` : "pricing_list_default";
+        try {
+          const saved = localStorage.getItem(key);
+          if (saved) {
+            setShopOwnerPricing(JSON.parse(saved));
+          } else {
+            setShopOwnerPricing(JSON.parse(JSON.stringify(DEFAULT_BASELINE_PRICING)));
+          }
+        } catch {
+          setShopOwnerPricing(JSON.parse(JSON.stringify(DEFAULT_BASELINE_PRICING)));
+        }
+        isInitialPriceFetchCompleteRef.current = true;
       }
-    } catch (e) {
-      console.warn("Could not load user pricing on user change:", e);
-      setShopOwnerPricing(JSON.parse(JSON.stringify(DEFAULT_BASELINE_PRICING)));
-    }
+    };
 
-    // Set the loaded email reference to permit saving subsequent edits
-    loadedEmailRef.current = authUser?.email;
-  }, [authUser]);
+    loadPricesForActiveAdmin();
+    loadedEmailRef.current = activeEmail;
+  }, [authUser?.email, adminUser?.email, isOwnerAuthenticated, isUserAuthenticated]);
 
-  // Save edits of pricing to local storage under the correct user key
+  // Persist edits of pricing to database with JWT Authorization header only after initial fetch has completed
   React.useEffect(() => {
-    if (loadedEmailRef.current !== authUser?.email) {
-      // Prevent stale pricing from being saved under a newly logged-in/switched user
+    const activeEmail = adminUser?.email || authUser?.email;
+    if (!isInitialPriceFetchCompleteRef.current) {
+      // Prevent race conditions where initial state would overwrite MongoDB document
       return;
     }
-    const key = authUser ? `pricing_list_${authUser.email.split('@')[0]}` : "pricing_list_default";
+    if (loadedEmailRef.current !== activeEmail) {
+      // Prevent stale pricing from being saved under a switched user
+      return;
+    }
+
+    const key = activeEmail ? `pricing_list_${activeEmail.split('@')[0]}` : "pricing_list_default";
     localStorage.setItem(key, JSON.stringify(shopOwnerPricing));
-  }, [shopOwnerPricing, authUser]);
+
+    // Save to backend with JWT Bearer token so each admin has their own isolated, persistent price list
+    saveAdminPrices(shopOwnerPricing).catch((err) => {
+      console.warn("Backend price autosave notice:", err);
+    });
+  }, [shopOwnerPricing, authUser?.email, adminUser?.email]);
 
   // Sync customer details changes to the active saved appraisal in history
   React.useEffect(() => {

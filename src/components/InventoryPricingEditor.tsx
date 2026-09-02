@@ -12,8 +12,12 @@ import {
   TrendingUp,
   AlertTriangle,
   CheckCircle,
-  FileText
+  FileText,
+  ShieldCheck,
+  Loader2
 } from "lucide-react";
+import { saveAdminPrices, fetchAdminPrices } from "../utils/pricingApi";
+import { getAdminUser, getUserData } from "../utils/authStorage";
 
 interface InventoryPricingEditorProps {
   shopOwnerPricing: Record<string, Record<string, { repair: number; replace: number }>>;
@@ -96,6 +100,29 @@ export default function InventoryPricingEditor({
       : `${currencySymbol}${Math.round(converted).toLocaleString("en-IN")}`;
   };
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
+
+  const activeAdmin = getAdminUser() || getUserData();
+
+  const handlePersistToCloud = async (overrideData?: Record<string, Record<string, { repair: number; replace: number }>>) => {
+    setIsSaving(true);
+    setSaveStatusMessage(null);
+    try {
+      const dataToSave = overrideData || shopOwnerPricing;
+      const res = await saveAdminPrices(dataToSave);
+      if (res.success) {
+        setSaveStatusMessage("All price modifications successfully saved and locked to your Admin account in database.");
+        setTimeout(() => setSaveStatusMessage(null), 4000);
+      }
+    } catch (err: any) {
+      setFormError(err.message || "Failed to persist prices to database.");
+      setTimeout(() => setFormError(null), 4000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Switch Segment Handler
   const handleSegmentChange = (segment: string) => {
     setSelectedSegment(segment);
@@ -116,31 +143,32 @@ export default function InventoryPricingEditor({
 
   // Save Inline Edit
   const saveInlineEdit = (key: string) => {
-    setShopOwnerPricing((prev) => {
-      const segmentPricing = { ...prev[selectedSegment] };
-      segmentPricing[key] = {
-        repair: Number(editRepairVal),
-        replace: Number(editReplaceVal)
-      };
-      return {
-        ...prev,
-        [selectedSegment]: segmentPricing
-      };
-    });
+    const updatedPricing = {
+      ...shopOwnerPricing,
+      [selectedSegment]: {
+        ...shopOwnerPricing[selectedSegment],
+        [key]: {
+          repair: Number(editRepairVal),
+          replace: Number(editReplaceVal),
+        },
+      },
+    };
+    setShopOwnerPricing(updatedPricing);
     setEditingKey(null);
+    handlePersistToCloud(updatedPricing);
   };
 
   // Delete Component
   const deleteComponent = (key: string) => {
     if (confirm(`Are you sure you want to remove "${key}" from the custom database?`)) {
-      setShopOwnerPricing((prev) => {
-        const segmentPricing = { ...prev[selectedSegment] };
-        delete segmentPricing[key];
-        return {
-          ...prev,
-          [selectedSegment]: segmentPricing
-        };
-      });
+      const updatedSegment = { ...shopOwnerPricing[selectedSegment] };
+      delete updatedSegment[key];
+      const updatedPricing = {
+        ...shopOwnerPricing,
+        [selectedSegment]: updatedSegment,
+      };
+      setShopOwnerPricing(updatedPricing);
+      handlePersistToCloud(updatedPricing);
     }
   };
 
@@ -157,28 +185,30 @@ export default function InventoryPricingEditor({
     }
 
     const currentKeys = Object.keys(shopOwnerPricing[selectedSegment] || {});
-    const duplicate = currentKeys.find(k => k.toLowerCase() === trimmedName.toLowerCase());
+    const duplicate = currentKeys.find((k) => k.toLowerCase() === trimmedName.toLowerCase());
     if (duplicate) {
       setFormError(`A component with the name "${trimmedName}" already exists.`);
       return;
     }
 
-    setShopOwnerPricing((prev) => {
-      const segmentPricing = { ...prev[selectedSegment] };
-      segmentPricing[trimmedName] = {
-        repair: Number(newRepairPrice),
-        replace: Number(newReplacePrice)
-      };
-      return {
-        ...prev,
-        [selectedSegment]: segmentPricing
-      };
-    });
+    const updatedPricing = {
+      ...shopOwnerPricing,
+      [selectedSegment]: {
+        ...shopOwnerPricing[selectedSegment],
+        [trimmedName]: {
+          repair: Number(newRepairPrice),
+          replace: Number(newReplacePrice),
+        },
+      },
+    };
 
+    setShopOwnerPricing(updatedPricing);
     setFormSuccess(`Successfully added "${trimmedName}" to inventory.`);
     setNewPartName("");
     setNewRepairPrice(0);
     setNewReplacePrice(0);
+
+    handlePersistToCloud(updatedPricing);
 
     setTimeout(() => {
       setFormSuccess(null);
@@ -187,9 +217,15 @@ export default function InventoryPricingEditor({
 
   // Reset all prices to master default database
   const handleResetToDefaults = () => {
-    if (confirm("Are you sure you want to revert all custom prices and items back to the factory master database settings? This will overwrite your current changes.")) {
-      setShopOwnerPricing(JSON.parse(JSON.stringify(DEFAULT_PRICING)));
+    if (
+      confirm(
+        "Are you sure you want to revert all custom prices and items back to factory default standards? This will overwrite your current admin price list in database."
+      )
+    ) {
+      const defaultData = JSON.parse(JSON.stringify(DEFAULT_PRICING));
+      setShopOwnerPricing(defaultData);
       setFormSuccess("Database pricing successfully restored to master default standards.");
+      handlePersistToCloud(defaultData);
       setTimeout(() => setFormSuccess(null), 3000);
     }
   };
@@ -232,12 +268,50 @@ export default function InventoryPricingEditor({
           </p>
         </div>
 
-        <button
-          onClick={handleResetToDefaults}
-          className="flex items-center gap-1.5 self-start md:self-auto bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 py-2 px-4 rounded-xl text-xs font-bold transition cursor-pointer"
-        >
-          <RotateCcw className="w-3.5 h-3.5" /> Revert to Default Standards
-        </button>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 self-start md:self-auto">
+          <button
+            onClick={() => handlePersistToCloud()}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold py-2 px-4 rounded-xl text-xs transition cursor-pointer shadow-md disabled:opacity-50"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5" /> Save Price List to Database
+              </>
+            )}
+          </button>
+          <button
+            onClick={handleResetToDefaults}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 py-2 px-4 rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Revert to Defaults
+          </button>
+        </div>
+      </div>
+
+      {/* Admin Isolation Status Ribbon */}
+      <div className="bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-500" />
+          <span className="font-semibold text-slate-700 dark:text-slate-300">
+            Isolated Admin Account:{" "}
+            <span className="font-mono text-sky-600 dark:text-sky-400 font-bold">
+              {activeAdmin?.email || "Current Admin"}
+            </span>
+          </span>
+          <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono px-2 py-0.5 rounded font-bold border border-emerald-500/20">
+            Per-Admin Isolation Active
+          </span>
+        </div>
+        {saveStatusMessage && (
+          <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-xs flex items-center gap-1 animate-fade-in">
+            <CheckCircle className="w-3.5 h-3.5" /> {saveStatusMessage}
+          </span>
+        )}
       </div>
 
       {/* Segment Selector Tabs */}

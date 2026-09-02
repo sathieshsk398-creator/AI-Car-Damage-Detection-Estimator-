@@ -18,6 +18,12 @@ import {
   verifyUserPassword,
   getDatabaseStatus,
 } from "./src/models/AdminUser";
+import {
+  PriceInventoryModel,
+  getOrCreatePriceList,
+  updateAdminPriceList,
+  DEFAULT_BASELINE_PRICING,
+} from "./src/models/PriceInventory";
 
 // Load environment variables
 dotenv.config();
@@ -735,6 +741,105 @@ app.post("/api/auth/verify", (req, res) => {
 app.get("/api/db/status", (req, res) => {
   const status = getDatabaseStatus();
   return res.json(status);
+});
+
+// --- JWT AUTHENTICATION MIDDLEWARE ---
+const authenticateToken = (req: any, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers["authorization"] || req.headers["Authorization"];
+  const token = typeof authHeader === "string" ? (authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader) : null;
+
+  if (!token) {
+    return res.status(401).json({ error: "Access denied. Bearer authorization token is missing." });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Session expired or invalid authorization signature." });
+  }
+};
+
+// --- ISOLATED PER-ADMIN PRICING LIST ROUTES ---
+
+// GET /api/admin/prices - Extracts req.user.id, looks up custom price list or creates default document
+app.get(["/api/admin/prices", "/api/prices"], authenticateToken, async (req: any, res) => {
+  try {
+    const adminId = req.user?.id ? String(req.user.id) : (req.user?.email ? String(req.user.email) : null);
+    if (!adminId) {
+      return res.status(400).json({ error: "Could not identify admin from authorization token." });
+    }
+
+    const fallbackEmail = req.user?.email ? String(req.user.email) : undefined;
+    const result = await getOrCreatePriceList(adminId, fallbackEmail);
+    return res.json({
+      success: true,
+      adminId,
+      prices: result.prices,
+      isNew: result.isNew,
+      message: result.isNew
+        ? "Default price list initialized and bound to admin profile."
+        : "Isolated custom price list retrieved successfully.",
+    });
+  } catch (err: any) {
+    console.error("GET /api/admin/prices error:", err);
+    return res.status(500).json({ error: "Database error while fetching admin price list." });
+  }
+});
+
+// PUT /api/admin/prices - Ensures price list is updated/upserted strictly for req.user.id
+app.put(["/api/admin/prices", "/api/prices"], authenticateToken, async (req: any, res) => {
+  try {
+    const adminId = req.user?.id ? String(req.user.id) : (req.user?.email ? String(req.user.email) : null);
+    if (!adminId) {
+      return res.status(400).json({ error: "Could not identify admin from authorization token." });
+    }
+
+    const { prices } = req.body;
+    if (!prices || typeof prices !== "object") {
+      return res.status(400).json({ error: "A valid prices matrix object is required." });
+    }
+
+    const fallbackEmail = req.user?.email ? String(req.user.email) : undefined;
+    const updatedPrices = await updateAdminPriceList(adminId, prices, fallbackEmail);
+    return res.json({
+      success: true,
+      message: "Admin price list saved and persisted successfully.",
+      adminId,
+      prices: updatedPrices,
+    });
+  } catch (err: any) {
+    console.error("PUT /api/admin/prices error:", err);
+    return res.status(500).json({ error: "Database error while saving admin price list." });
+  }
+});
+
+// POST /api/admin/prices - Alias for price updates/upserts
+app.post(["/api/admin/prices", "/api/prices"], authenticateToken, async (req: any, res) => {
+  try {
+    const adminId = req.user?.id ? String(req.user.id) : (req.user?.email ? String(req.user.email) : null);
+    if (!adminId) {
+      return res.status(400).json({ error: "Could not identify admin from authorization token." });
+    }
+
+    const { prices } = req.body;
+    if (!prices || typeof prices !== "object") {
+      return res.status(400).json({ error: "A valid prices matrix object is required." });
+    }
+
+    const fallbackEmail = req.user?.email ? String(req.user.email) : undefined;
+    const updatedPrices = await updateAdminPriceList(adminId, prices, fallbackEmail);
+    return res.json({
+      success: true,
+      message: "Admin price list saved and persisted successfully.",
+      adminId,
+      prices: updatedPrices,
+    });
+  } catch (err: any) {
+    console.error("POST /api/admin/prices error:", err);
+    return res.status(500).json({ error: "Database error while saving admin price list." });
+  }
 });
 
 // API endpoint for analyzing vehicle damage
