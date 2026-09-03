@@ -1,0 +1,9 @@
+[
+  {
+    "id": "u_demo_user",
+    "email": "user@autoguard.com",
+    "password": "$2b$10$Dz9XPlvBg2NxuVrxkv5Ai.uCCorfNB8JF2I2/LPYM2.YFx3SR7eXy",
+    "role": "User",
+    "createdAt": "2026-09-03T10:16:01.484Z"
+  }
+]

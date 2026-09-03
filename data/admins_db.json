@@ -1,0 +1,18 @@
+[
+  {
+    "id": "o_default_admin",
+    "email": "admin@autoguard.com",
+    "password": "$2b$10$BzQdFBt3I/8a8duE7hGz7.jsr/WwILHCmzvAcWopTRkqLTmukezZG",
+    "role": "Showroom Admin",
+    "shopName": "AutoGuard Care Center",
+    "createdAt": "2026-09-03T10:16:01.017Z"
+  },
+  {
+    "id": "o_default_owner",
+    "email": "owner@autoguard.com",
+    "password": "$2b$10$Tosw6hzsuEU1XkhFsI7p/Okjf3TXT35qs.9SEJxES.vP5sHfzkX5O",
+    "role": "Showroom Admin",
+    "shopName": "AutoGuard Custom Repairs",
+    "createdAt": "2026-09-03T10:16:01.279Z"
+  }
+]
