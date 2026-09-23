@@ -12,6 +12,8 @@
 
 **AI Car Damage Estimator** is a full-stack web application that uses **Google's Gemini AI vision models** to analyze photos of damaged vehicles and instantly generate a detailed, itemized repair report — complete with damaged parts, severity, recommended action (repair or replace), and estimated costs in **Indian Rupees (₹)**.
 
+View my website in : https://ai-car-damage-detection-estimator.onrender.com 
+
 The platform is designed for **two types of users**:
 - 👤 **Customers** — upload a photo of their damaged car and receive an instant, transparent damage & cost estimate.
 - 🏢 **Shop Owners / Admins** — manage a custom pricing inventory, review submitted appraisals, and generate professional, shareable reports for their customers.
@@ -102,4 +104,4 @@ The **AI Car Damage Estimator** brings speed, transparency, and consistency to v
 
 **Sathiesh Kumar M**
 
-View my website in : https://ai-car-damage-detection-estimator.onrender.com 
+
